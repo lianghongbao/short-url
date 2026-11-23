@@ -30,8 +30,9 @@ jobs:
         id: meta
         run: |
           SHORT_SHA="${GITHUB_SHA::7}"
+          echo "short_sha=${SHORT_SHA}" >> $GITHUB_OUTPUT
           echo "image_tag=${IMAGE_NAME}-${SHORT_SHA}" >> $GITHUB_OUTPUT
-          echo "▶ Image tag: ${IMAGE_NAME}-${SHORT_SHA}"
+          echo "▶ Image tag: ${IMAGE_NAME}:${SHORT_SHA}"
 
       - name: Login to ACR
         env:
@@ -55,7 +56,7 @@ jobs:
           set -e
           REGISTRY="${ACR_REGISTRY_HOST}/${ACR_NAMESPACE}"
 
-          IMAGE="${REGISTRY}/${IMAGE_NAME}:${{ steps.meta.outputs.image_tag }}"
+          IMAGE="${REGISTRY}/${IMAGE_NAME}:${{ steps.meta.outputs.short_sha }}"
           LATEST="${REGISTRY}/${IMAGE_NAME}:server-latest"
 
           # 清老 cache metadata
