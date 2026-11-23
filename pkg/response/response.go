@@ -12,21 +12,20 @@ type Response struct {
 	Data interface{} `json:"data,omitempty"`
 }
 
+// 业务错误码
 const (
-	CodeSuccess = 0
-	CodeError   = 1
+	CodeSuccess       = 0
+	CodeInvalidURL    = 1001
+	CodeShortNotFound = 1002
+	CodeInternalError = 1003
+	CodeShortDisabled = 1004
 )
-
-var codeMessages = map[int]string{
-	CodeSuccess: "成功",
-	CodeError:   "错误",
-}
 
 // Success 返回成功响应
 func Success(c *gin.Context, data interface{}) {
 	c.JSON(http.StatusOK, Response{
 		Code: CodeSuccess,
-		Msg:  codeMessages[CodeSuccess],
+		Msg:  "成功",
 		Data: data,
 	})
 }

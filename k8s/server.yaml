@@ -33,8 +33,8 @@ data:
       level: "info"
       filename: ""  # K8s 下置空，仅输出 stdout，让 kubectl logs 可采集
       max_size: 100
-      max_backups: 7
-      max_age: 7
+      max_backups: 30
+      max_age: 30
       compress: true
 
     # mongodb.uri 和 redis.addr / redis.password 由 Secret 通过环境变量注入
@@ -46,18 +46,20 @@ data:
       timeout: 10s
 
     redis:
+      mode: "single"  # single 或 cluster
       # DB 号用于与同一 Redis 实例上的其他应用隔离，仅单机模式有效
       db: 3
       pool_size: 100
 
     idgen:
-      batch_size: 100
+      batch_size: 30
       mask: 123456789
-      prefetch_threshold: 30
+      prefetch_threshold: 5
 
     cache:
       short_ttl: 12h
       empty_ttl: 5m
+      id_segment_ttl: 30s
 
 ---
 # ---- Secret（本地开发取消注释；生产由 CI / Vault 注入）----
@@ -98,7 +100,7 @@ spec:
     spec:
       containers:
       - name: server
-        image: your-registry/short-url-server:server-latest
+        image: your-registry/your-namespace:short-url-server-latest
         imagePullPolicy: Always
         command: ["/app/server", "-config", "config/config.yaml"]
         ports:

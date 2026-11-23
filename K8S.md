@@ -45,11 +45,11 @@ docker images short-url
 **生产环境（推送到远程镜像仓库）：**
 
 ```bash
-docker tag short-url:latest your-registry.com/short-url:latest
-docker push your-registry.com/short-url:latest
+docker tag short-url:latest your-registry.com/your-namespace:short-url-server-latest
+docker push your-registry.com/your-namespace:short-url-server-latest
 
 # 然后修改 k8s/server.yaml 和 k8s/cronjob.yaml 中的 image 和 Ingress 域名
-# short-url:latest → your-registry.com/short-url:latest
+# your-registry/your-namespace:short-url-server-latest → 你的镜像仓库地址
 # short.yourdomain.com → 你的真实域名
 ```
 

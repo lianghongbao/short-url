@@ -1,7 +1,6 @@
 .git
 .gitignore
 .env
-.env.prod
 *.md
 Dockerfile
 docker-compose.yml

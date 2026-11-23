@@ -17,7 +17,7 @@ type URL struct {
 	ClickCount  int64              `bson:"click_count"`         // 累计点击次数
 	LastVisited time.Time          `bson:"last_visited"`        // 最后访问时间
 	ExpireAt    *time.Time         `bson:"expire_at,omitempty"` // 过期时间
-	Status      int                `bson:"status"`              // 状态，取值见下方常量
+	Status      int                `bson:"status"`              // 状态：0 正常，1 禁用，2 已过期
 }
 
 // CachedURL Redis缓存结构
@@ -27,7 +27,7 @@ type CachedURL struct {
 	Status    int    `json:"status"`     // 状态
 }
 
-// 短链状态常量
+// 短链状态。服务只写入正常状态，禁用和过期由外部在数据库里标记
 const (
 	StatusNormal  = 0 // 正常
 	StatusDisable = 1 // 禁用

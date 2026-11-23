@@ -15,6 +15,7 @@ const codeLen = 5
 // 用于确保 ID 在安全范围内进行编码
 const MaxCodeValue = int64(916132831)
 
+// Encode 把 ID 编码成固定长度的短码。ID 超出可编码范围时返回空串
 func Encode(id int64) string {
 	if id < 0 {
 		return ""
@@ -28,6 +29,7 @@ func Encode(id int64) string {
 	return string(result)
 }
 
+// Decode 把短码还原成 ID，短码非法时返回错误
 func Decode(code string) (int64, error) {
 	if len(code) != codeLen {
 		return 0, ErrInvalidCode

@@ -49,28 +49,28 @@ type ShortenRequest struct {
 func (h *Handler) Shorten(c *gin.Context) {
 	var req ShortenRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, http.StatusBadRequest, 1001, "无效的URL: "+err.Error())
+		response.Error(c, http.StatusBadRequest, response.CodeInvalidURL, "无效的URL: "+err.Error())
 		return
 	}
 
 	result, err := h.shortenSvc.Shorten(c.Request.Context(), req.LongURL)
 	if err != nil {
 		if errors.Is(err, service.ErrInvalidURL) {
-			response.Error(c, http.StatusBadRequest, 1001, "无效的URL")
+			response.Error(c, http.StatusBadRequest, response.CodeInvalidURL, "无效的URL")
 			return
 		}
 		if errors.Is(err, service.ErrURLDisabled) {
-			response.Error(c, http.StatusForbidden, 1004, "短链已被禁用")
+			response.Error(c, http.StatusForbidden, response.CodeShortDisabled, "短链已被禁用")
 			return
 		}
 		if errors.Is(err, service.ErrURLNotExist) {
-			response.Error(c, http.StatusNotFound, 1002, "短链不存在")
+			response.Error(c, http.StatusNotFound, response.CodeShortNotFound, "短链不存在")
 			return
 		}
 		logger.Error("短链生成失败",
 			logger.String("long_url", req.LongURL),
 			logger.WithError(err))
-		response.Error(c, http.StatusInternalServerError, 1003, "服务器内部错误")
+		response.Error(c, http.StatusInternalServerError, response.CodeInternalError, "服务器内部错误")
 		return
 	}
 
@@ -84,24 +84,24 @@ func (h *Handler) Shorten(c *gin.Context) {
 func (h *Handler) Redirect(c *gin.Context) {
 	code := c.Param("code")
 	if code == "" {
-		response.Error(c, http.StatusBadRequest, 1001, "缺少短链码")
+		response.Error(c, http.StatusBadRequest, response.CodeInvalidURL, "缺少短链码")
 		return
 	}
 
 	longURL, err := h.statSvc.Redirect(c.Request.Context(), code)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
-			response.Error(c, http.StatusNotFound, 1002, "短链码不存在")
+			response.Error(c, http.StatusNotFound, response.CodeShortNotFound, "短链码不存在")
 			return
 		}
 		if errors.Is(err, service.ErrURLDisabled) {
-			response.Error(c, http.StatusForbidden, 1004, "短链已被禁用")
+			response.Error(c, http.StatusForbidden, response.CodeShortDisabled, "短链已被禁用")
 			return
 		}
 		logger.Error("短链重定向失败",
 			logger.String("code", code),
 			logger.WithError(err))
-		response.Error(c, http.StatusInternalServerError, 1003, "服务器内部错误")
+		response.Error(c, http.StatusInternalServerError, response.CodeInternalError, "服务器内部错误")
 		return
 	}
 
@@ -137,20 +137,20 @@ func toLocalTime(t time.Time) string {
 func (h *Handler) Stat(c *gin.Context) {
 	code := c.Param("code")
 	if code == "" {
-		response.Error(c, http.StatusBadRequest, 1001, "缺少短链码")
+		response.Error(c, http.StatusBadRequest, response.CodeInvalidURL, "缺少短链码")
 		return
 	}
 
 	url, err := h.statSvc.GetByCode(c.Request.Context(), code)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
-			response.Error(c, http.StatusNotFound, 1002, "短链码不存在")
+			response.Error(c, http.StatusNotFound, response.CodeShortNotFound, "短链码不存在")
 			return
 		}
 		logger.Error("查询短链统计失败",
 			logger.String("code", code),
 			logger.WithError(err))
-		response.Error(c, http.StatusInternalServerError, 1003, "服务器内部错误")
+		response.Error(c, http.StatusInternalServerError, response.CodeInternalError, "服务器内部错误")
 		return
 	}
 
@@ -201,7 +201,7 @@ func (h *Handler) Ready(c *gin.Context) {
 func (h *Handler) IDSegment(c *gin.Context) {
 	info, err := h.idSegmentSvc.GetSegmentInfo(c.Request.Context())
 	if err != nil {
-		response.Error(c, http.StatusInternalServerError, 1003, "查询ID号段失败: "+err.Error())
+		response.Error(c, http.StatusInternalServerError, response.CodeInternalError, "查询ID号段失败: "+err.Error())
 		return
 	}
 	response.Success(c, info)
