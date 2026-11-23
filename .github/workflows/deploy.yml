@@ -56,8 +56,8 @@ jobs:
           set -e
           REGISTRY="${ACR_REGISTRY_HOST}/${ACR_NAMESPACE}"
 
-          IMAGE="${REGISTRY}/${IMAGE_NAME}:${{ steps.meta.outputs.short_sha }}"
-          LATEST="${REGISTRY}/${IMAGE_NAME}:server-latest"
+          IMAGE="${REGISTRY}:${IMAGE_NAME}-${{ steps.meta.outputs.short_sha }}"
+          LATEST="${REGISTRY}:${IMAGE_NAME}-latest"
 
           # 清老 cache metadata
           docker builder prune -af || true
@@ -120,7 +120,7 @@ jobs:
             --username "${REGISTRY_USERNAME}" \
             --password-stdin "${REGISTRY}"
 
-          IMAGE="${REGISTRY}/${IMAGE_NAME}:server-latest"
+          IMAGE="${REGISTRY}:${IMAGE_NAME}-latest"
           docker pull "${IMAGE}"
           echo "✅ Pulled ${IMAGE}"
 

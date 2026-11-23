@@ -27,7 +27,7 @@ push main → build (GitHub-hosted runner)
 |--------|------|--------|
 | `ACR_REGISTRY_HOST` | ACR 公网端点域名 | `<your-acr-region>.personal.cr.aliyuncs.com`(查 ACR 控制台实例详情) |
 | `ACR_NAMESPACE` | ACR namespace/repo 路径 | `<your-namespace>/<your-repo>` |
-| `IMAGE_NAME` | 镜像名（对应 compose 里 `image: ${ACR_REGISTRY_HOST}/${ACR_NAMESPACE}/${IMAGE_NAME}:server-latest`）| `short-url-server` |
+| `IMAGE_NAME` | 镜像名（对应 compose 里 `image: ${ACR_REGISTRY_HOST}/${ACR_NAMESPACE}:${IMAGE_NAME}-latest`）| `short-url-server` |
 | `APP_CONTAINER` | docker-compose 里 `container_name`，健康检查的目标容器 | `short-url` |
 | `BASE_GOLANG_TAG` | builder 基础镜像 tag | `golang-1.25-alpine` |
 | `BASE_ALPINE_TAG` | runtime 基础镜像 tag | `alpine-3.21` |
@@ -73,14 +73,14 @@ push main → build (GitHub-hosted runner)
 
 ## 镜像 tag 约定
 
-镜像全名 = `${ACR_REGISTRY_HOST}/${ACR_NAMESPACE}/${IMAGE_NAME}:<tag>`。
+镜像全名 = `${ACR_REGISTRY_HOST}/${ACR_NAMESPACE}:${IMAGE_NAME}-<version>`。
 
 | Tag | 类型 | 用途 |
 |-----|------|------|
-| `${IMAGE_NAME}:<7位 sha>` | immutable | 精确版本（由 build job 打） |
-| `${IMAGE_NAME}:server-latest` | mutable pointer | deploy job 拉这个，compose 的 `image:` 也指向它 |
+| `${IMAGE_NAME}-<7位 sha>` | immutable | 精确版本（由 build job 打） |
+| `${IMAGE_NAME}-latest` | mutable pointer | deploy job 拉这个，compose 的 `image:` 也指向它 |
 
-compose 的 `image:` 由 `${ACR_REGISTRY_HOST}/${ACR_NAMESPACE}/${IMAGE_NAME}:server-latest` 拼出
+compose 的 `image:` 由 `${ACR_REGISTRY_HOST}/${ACR_NAMESPACE}:${IMAGE_NAME}-latest` 拼出
 （没配 ACR 时退化成裸名，本地构建用）。两个 tag 都在仓库里直接存在，服务器上不需要再 re-tag。
 
 ## ACR 端点说明

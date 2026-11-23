@@ -22,9 +22,9 @@ x-build-args: &build-args
   GOLANG_IMAGE: ${BASE_GOLANG_TAG:+${ACR_REGISTRY_HOST}/${ACR_NAMESPACE}:}${BASE_GOLANG_TAG:-golang-1.25-alpine}
   ALPINE_IMAGE: ${BASE_ALPINE_TAG:+${ACR_REGISTRY_HOST}/${ACR_NAMESPACE}:}${BASE_ALPINE_TAG:-alpine-3.21}
 
-# 业务镜像名。前缀由 ACR_REGISTRY_HOST/ACR_NAMESPACE 拼出，两项都设了才加前缀
-# （本地构建没配 ACR 时用裸名）。
-x-image: &image ${ACR_NAMESPACE:+${ACR_REGISTRY_HOST}/${ACR_NAMESPACE}/}${IMAGE_NAME:-short-url-server}:server-latest
+# 业务镜像名。仓库是 ACR_REGISTRY_HOST/ACR_NAMESPACE，镜像名和 tag 跟在冒号后。
+# 没配 ACR 时用裸名（本地构建）。
+x-image: &image ${ACR_NAMESPACE:+${ACR_REGISTRY_HOST}/${ACR_NAMESPACE}:}${IMAGE_NAME:-short-url-server}-latest
 
 services:
   short-url:
