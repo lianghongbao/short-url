@@ -1,0 +1,178 @@
+# 通用 Docker 镜像 build + deploy 流水线
+#
+# 依赖 GitHub Vars(明文配置)+ Secrets(凭证)+ ECS self-hosted runner
+# 配置项见同目录 README.md
+
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    name: Build & push image
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.meta.outputs.image_tag }}
+      image_name: ${{ env.IMAGE_NAME }}
+    env:
+      ACR_REGISTRY_HOST: ${{ vars.ACR_REGISTRY_HOST }}
+      ACR_NAMESPACE: ${{ vars.ACR_NAMESPACE }}
+      IMAGE_NAME: ${{ vars.IMAGE_NAME }}
+      BASE_GOLANG_TAG: ${{ vars.BASE_GOLANG_TAG }}
+      BASE_ALPINE_TAG: ${{ vars.BASE_ALPINE_TAG }}
+      DOCKER_BUILDKIT: 1
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set image tag
+        id: meta
+        run: |
+          SHORT_SHA="${GITHUB_SHA::7}"
+          echo "image_tag=${IMAGE_NAME}-${SHORT_SHA}" >> $GITHUB_OUTPUT
+          echo "▶ Image tag: ${IMAGE_NAME}-${SHORT_SHA}"
+
+      - name: Login to ACR
+        env:
+          ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
+          ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
+        run: |
+          echo "▶ ACR login: ${ACR_REGISTRY_HOST}"
+          echo "${ACR_PASSWORD}" | docker login \
+            --username "${ACR_USERNAME}" \
+            --password-stdin "${ACR_REGISTRY_HOST}"
+          echo "✅ ACR login OK"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build & push image
+        # 一次 build 打两个 tag:
+        #   ${IMAGE_NAME}-<sha>   immutable,精确版本
+        #   ${IMAGE_NAME}-latest  mutable pointer,deploy job 拉这个
+        run: |
+          set -e
+          REGISTRY="${ACR_REGISTRY_HOST}/${ACR_NAMESPACE}"
+
+          IMAGE="${REGISTRY}:${{ steps.meta.outputs.image_tag }}"
+          LATEST="${REGISTRY}:${IMAGE_NAME}-latest"
+
+          # 清老 cache metadata
+          docker builder prune -af || true
+
+          echo "▶ Building ${IMAGE} + ${LATEST}"
+
+          # base 镜像的 tag 由 GH Var 提供，未设置时回落到默认值
+          EFFECTIVE_GOLANG_TAG="${BASE_GOLANG_TAG:-golang-1.25-alpine}"
+          EFFECTIVE_ALPINE_TAG="${BASE_ALPINE_TAG:-alpine-3.21}"
+          GOLANG_IMAGE="${REGISTRY}:${EFFECTIVE_GOLANG_TAG}"
+          ALPINE_IMAGE="${REGISTRY}:${EFFECTIVE_ALPINE_TAG}"
+
+          echo "▶ Base images: ${GOLANG_IMAGE} / ${ALPINE_IMAGE}"
+
+          # 关闭 provenance/sbom：只推送普通 image manifest
+          docker buildx build \
+            --no-cache \
+            --pull \
+            --platform linux/amd64 \
+            --provenance=false \
+            --sbom=false \
+            --build-arg "GOLANG_IMAGE=${GOLANG_IMAGE}" \
+            --build-arg "ALPINE_IMAGE=${ALPINE_IMAGE}" \
+            -t "${IMAGE}" \
+            -t "${LATEST}" \
+            --push \
+            -f Dockerfile .
+
+          echo "✅ Pushed ${IMAGE} + ${LATEST}"
+
+  deploy:
+    name: Deploy to self-hosted runner
+    runs-on: [self-hosted, docker, aliyun]
+    needs: build
+    concurrency:
+      group: ${{ vars.CONCURRENCY_GROUP }}
+      cancel-in-progress: true     # 新部署自动取消旧部署,避免卡死
+    env:
+      ACR_REGISTRY_HOST: ${{ vars.ACR_REGISTRY_HOST }}
+      ACR_NAMESPACE: ${{ vars.ACR_NAMESPACE }}
+      IMAGE_NAME: ${{ vars.IMAGE_NAME }}
+      APP_CONTAINER: ${{ vars.APP_CONTAINER }}
+      DEPLOY_DIR: ${{ vars.DEPLOY_DIR }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: .
+
+      - name: Pull image from ACR
+        # 拉 ${IMAGE_NAME}-latest,re-tag 成 ${IMAGE_NAME}:server-latest(本地 tag,供 compose 引用)
+        # 凭证从 ${DEPLOY_DIR}/.env 读 REGISTRY_USERNAME / REGISTRY_PASSWORD
+        run: |
+          set -e
+          if [ -f "${DEPLOY_DIR}/.env" ]; then
+            set -a; source ${DEPLOY_DIR}/.env; set +a
+          fi
+          REGISTRY="${ACR_REGISTRY_HOST}/${ACR_NAMESPACE}"
+          echo "▶ ACR login: ${REGISTRY}"
+          echo "${REGISTRY_PASSWORD}" | docker login \
+            --username "${REGISTRY_USERNAME}" \
+            --password-stdin "${REGISTRY}"
+
+          REMOTE_IMAGE="${REGISTRY}:${IMAGE_NAME}-latest"
+          LOCAL_IMAGE="${IMAGE_NAME}:server-latest"
+          docker pull "${REMOTE_IMAGE}"
+          docker tag "${REMOTE_IMAGE}" "${LOCAL_IMAGE}"
+          echo "✅ Pulled ${REMOTE_IMAGE} → ${LOCAL_IMAGE}"
+
+      - name: Sync & deploy
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -e
+
+          # 首次部署:创建目录 + 同步最新 docker-compose.yml
+          if [ ! -d "${DEPLOY_DIR}" ]; then
+            echo "首次部署,创建 ${DEPLOY_DIR}..."
+            mkdir -p "${DEPLOY_DIR}"
+          fi
+          cp $GITHUB_WORKSPACE/docker-compose.yml ${DEPLOY_DIR}/docker-compose.yml
+
+          # 首次部署:从 .env.example 生成 .env(需手动填凭证)
+          if [ ! -f "${DEPLOY_DIR}/.env" ]; then
+            if [ -f .env.example ]; then
+              cp .env.example ${DEPLOY_DIR}/.env
+              echo "⚠️ 已创建 ${DEPLOY_DIR}/.env(从 .env.example),请手动填入真实凭证后再部署"
+            else
+              echo "❌ 项目无 .env.example,请手动创建 ${DEPLOY_DIR}/.env 后再触发部署"
+              exit 1
+            fi
+          fi
+
+          # 重启服务(--no-deps 不重启 mongo 等依赖)
+          # mongo 和 Redis 都是外部署的独立服务，不归本 compose 管
+          cd ${DEPLOY_DIR}
+          docker compose up -d --no-deps --wait --wait-timeout 90
+          docker ps -a
+
+          docker image prune -f
+          echo "✅ ${IMAGE_NAME} deployed"
+
+      - name: Health check
+        # 用 docker exec 进容器检测端口监听(绕开 host.docker.internal 在 Linux runner 不通)
+        # 容器名跟镜像名不一定相同(用 APP_CONTAINER 而非 IMAGE_NAME)
+        run: |
+          echo "⏳ 等待 ${APP_CONTAINER} 健康检查..."
+          for i in $(seq 1 20); do
+            # busybox 自带 wget/alpine 默认有
+            if docker exec ${APP_CONTAINER} wget -q -T 2 -O /dev/null http://localhost:8080/health 2>/dev/null; then
+              echo "✅ 健康(尝试 $i 次,wget /health)"
+              exit 0
+            fi
+            # fallback: busybox nc 检测端口
+            if docker exec ${APP_CONTAINER} nc -z localhost 8080 2>/dev/null; then
+              echo "✅ 端口已监听(尝试 $i 次,nc -z)"
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "⚠️ 20 次未通过健康检查,请手动 docker compose logs ${APP_CONTAINER}"

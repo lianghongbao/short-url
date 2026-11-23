@@ -1,0 +1,181 @@
+# ============================================================
+# Short URL - Server
+#   kubectl apply -f k8s/server.yaml
+# ============================================================
+
+# ---- Namespace ----
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: short-url
+  labels:
+    app.kubernetes.io/name: short-url
+
+---
+# ---- ConfigMap ----
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: short-url-config
+  namespace: short-url
+  labels:
+    app: short-url
+data:
+  config.yaml: |
+    app:
+      host: "0.0.0.0"
+      port: 8080
+      mode: "release"
+      base_url: "https://short.yourdomain.com"  # 对外短链域名
+      shutdown_timeout: 30s
+
+    log:
+      level: "info"
+      filename: ""  # K8s 下置空，仅输出 stdout，让 kubectl logs 可采集
+      max_size: 100
+      max_backups: 7
+      max_age: 7
+      compress: true
+
+    # mongodb.uri 和 redis.addr / redis.password 由 Secret 通过环境变量注入
+    # 对应的环境变量名: MONGODB_URI, REDIS_ADDR, REDIS_PASSWORD
+    mongodb:
+      database: "shorturl_db"
+      collection: "short_urls"
+      sequence_collection: "url_sequence"
+      timeout: 10s
+
+    redis:
+      # DB 号用于与同一 Redis 实例上的其他应用隔离，仅单机模式有效
+      db: 3
+      pool_size: 100
+
+    idgen:
+      batch_size: 100
+      mask: 123456789
+      prefetch_threshold: 30
+
+    cache:
+      short_ttl: 12h
+      empty_ttl: 5m
+
+---
+# ---- Secret（本地开发取消注释；生产由 CI / Vault 注入）----
+# apiVersion: v1
+# kind: Secret
+# metadata:
+#   name: short-url-secret
+#   namespace: short-url
+#   labels:
+#     app: short-url
+# type: Opaque
+# stringData:
+#   MONGODB_URI: mongodb://root:123456@mongo-service:27017
+#   REDIS_ADDR: redis-service:6379
+#   REDIS_PASSWORD: "123456"
+#
+# Redis 是独立部署的实例，K8s 集群要能访问到它 ——
+# Docker 容器名只在 Docker 网络里可解析，跨到 K8s 得用 Service 或外部地址。
+
+---
+# ---- Deployment ----
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: short-url-server
+  namespace: short-url
+  labels:
+    app: short-url
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: short-url
+  template:
+    metadata:
+      labels:
+        app: short-url
+    spec:
+      containers:
+      - name: server
+        image: your-registry/short-url-server:server-latest
+        imagePullPolicy: Always
+        command: ["/app/server", "-config", "config/config.yaml"]
+        ports:
+        - containerPort: 8080
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 15
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        env:
+        - name: GIN_MODE
+          value: "release"
+        envFrom:
+        - secretRef:
+            name: short-url-secret # 注入secret相关环境变量
+        resources:
+          requests:
+            cpu: 100m
+            memory: 64Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+        volumeMounts:
+        - name: config
+          mountPath: /app/config
+          readOnly: true
+      volumes:
+      - name: config
+        configMap:
+          name: short-url-config
+
+---
+# ---- Service ----
+apiVersion: v1
+kind: Service
+metadata:
+  name: short-url-server
+  namespace: short-url
+  labels:
+    app: short-url
+spec:
+  selector:
+    app: short-url
+  ports:
+  - port: 8080
+    targetPort: 8080
+
+---
+# ---- Ingress ----
+# 前提: 集群已安装 nginx-ingress，DNS 解析域名到 Ingress EXTERNAL-IP
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: short-url-ingress
+  namespace: short-url
+  labels:
+    app: short-url
+spec:
+  tls:
+  - hosts:
+    - short.yourdomain.com
+    secretName: short-url-tls
+  rules:
+  - host: short.yourdomain.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: short-url-server
+            port:
+              number: 8080

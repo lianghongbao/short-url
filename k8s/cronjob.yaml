@@ -1,0 +1,54 @@
+# ============================================================
+# Short URL - 统计同步 CronJob
+#   kubectl apply -f k8s/cronjob.yaml
+#
+# 依赖: server.yaml 中的 Namespace / ConfigMap / Secret
+# ============================================================
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: sync-click-stats
+  namespace: short-url
+  labels:
+    app: short-url
+    component: sync
+spec:
+  schedule: "*/1 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  startingDeadlineSeconds: 30
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 60
+      template:
+        metadata:
+          labels:
+            app: short-url
+            component: sync
+        spec:
+          restartPolicy: Never
+          containers:
+          - name: sync
+            image: your-registry/short-url-server:server-latest
+            imagePullPolicy: Always
+            command: ["/app/sync", "-config", "config/config.yaml", "-batch", "100"]
+            envFrom:
+            - secretRef:
+                name: short-url-secret
+            resources:
+              requests:
+                cpu: 50m
+                memory: 32Mi
+              limits:
+                cpu: 200m
+                memory: 128Mi
+            volumeMounts:
+            - name: config
+              mountPath: /app/config
+              readOnly: true
+          volumes:
+          - name: config
+            configMap:
+              name: short-url-config

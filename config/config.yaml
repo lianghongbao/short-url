@@ -1,0 +1,52 @@
+app:
+  host: "0.0.0.0"
+  port: 8080
+  mode: "release"
+  base_url: "" # 对外暴露的短链域名，如 https://short.example.com，为空则自动使用 host:port
+  shutdown_timeout: 30s
+
+log:
+  level: "info"
+  filename: "logs/app.log"
+  max_size: 100
+  max_backups: 30
+  max_age: 30
+  compress: true
+
+mongodb:
+  # 单机模式
+  uri: "mongodb://admin:admin123@mongo:27017/?authSource=admin"
+  # 副本集模式（取消注释下面那行，注释上面那行）
+  # uri: "mongodb://admin:123456@mongo1:27017,mongo2:27017,mongo3:27017/?authSource=admin&replicaSet=rs0"
+  # 分片集群模式（通过 mongos 路由）
+  # uri: "mongodb://admin:123456@mongos1:27017,mongos2:27017/?authSource=admin"
+  database: "shorturl_db"
+  collection: "short_urls"
+  sequence_collection: "url_sequence"
+  timeout: 10s
+
+redis:
+  mode: "single"                                    # single 或 cluster
+  addr: "redis:6379"                                # 单机模式有效
+  # addrs:                                          # 集群模式有效（取消注释 + 注释 addr）
+  #   - "redis-node1:6379"
+  #   - "redis-node2:6379"
+  #   - "redis-node3:6379"
+  password: ""                                      # 生产环境通过环境变量 REDIS_PASSWORD 注入
+  # DB 号用于与同一 Redis 实例上的其他应用隔离，仅单机模式有效（集群模式只有 DB 0）
+  db: 3
+  pool_size: 100
+
+# ID生成配置
+idgen:
+  # 每批次预取的ID数量
+  batch_size: 30
+  # ID掩码，确保生成的ID在特定范围内
+  mask: 123456789
+  # 预取阈值
+  prefetch_threshold: 5
+
+cache:
+  short_ttl: 12h
+  empty_ttl: 5m
+  id_segment_ttl: 30s

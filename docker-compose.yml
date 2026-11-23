@@ -1,0 +1,162 @@
+# ============================================================
+# 本地开发 + 生产部署
+#   docker compose up -d --build   构建并启动 server + mongo
+#   docker compose build           仅构建镜像
+#
+# Redis 不在本 compose 的生命周期内 —— 它是外部署的实例，容器之间通过
+# data-net 网络用容器名 redis 解析，DB 号用于与同实例的其他应用隔离。
+#
+#   独立跑一个本地 Redis（不依赖外部实例时用）:
+#     docker compose --profile standalone up -d
+# ============================================================
+
+# 数据持久化使用 named volumes
+volumes:
+  mongo-data:
+  redis-data:
+  app-data:
+
+# 构建参数。base 镜像走 ACR 时前缀 ACR_REGISTRY_HOST/ACR_NAMESPACE，
+# 未设置 ACR 时直接用公开镜像源，由 Dockerfile 的 ARG 默认值兜底。
+x-build-args: &build-args
+  GOLANG_IMAGE: ${BASE_GOLANG_TAG:+${ACR_REGISTRY_HOST}/${ACR_NAMESPACE}:}${BASE_GOLANG_TAG:-golang-1.25-alpine}
+  ALPINE_IMAGE: ${BASE_ALPINE_TAG:+${ACR_REGISTRY_HOST}/${ACR_NAMESPACE}:}${BASE_ALPINE_TAG:-alpine-3.21}
+
+services:
+  short-url:
+    build:
+      context: .
+      args: *build-args
+    image: ${IMAGE_NAME:-short-url-server}:server-latest
+    container_name: short-url
+    command: ["/app/server", "-config", "config/config.yaml"]
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    environment:
+      - TZ=Asia/Shanghai
+      - APP_HOST=${APP_HOST:-0.0.0.0}
+      - APP_PORT=${APP_PORT:-8080}
+      - APP_MODE=${APP_MODE:-release}
+      - APP_LOG_LEVEL=${APP_LOG_LEVEL:-info}
+      - APP_BASE_URL=${APP_BASE_URL:-}
+      - MONGODB_URI=${MONGODB_URI:-mongodb://${MONGO_USERNAME:-admin}:${MONGO_PASSWORD:-admin123}@mongo:27017/?authSource=admin}
+      - MONGODB_DATABASE=${MONGODB_DATABASE:-shorturl_db}
+      - MONGODB_COLLECTION=${MONGODB_COLLECTION:-short_urls}
+      - REDIS_ADDR=${REDIS_ADDR:-redis:6379}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      - REDIS_DB=${REDIS_DB:-3}
+    depends_on:
+      mongo:
+        condition: service_healthy
+    restart: unless-stopped
+    volumes:
+      - app-data:/app/logs
+    networks:
+      - short-url-network
+      # Redis 所在的外部网络
+      - data-net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+  sync-cron:
+    build:
+      context: .
+      args: *build-args
+    image: ${IMAGE_NAME:-short-url-server}:server-latest
+    container_name: short-url-sync-cron
+    command:
+      - /bin/sh
+      - -c
+      - |
+        echo "sync-cron started, interval=${SYNC_INTERVAL:-60}s"
+        while true; do
+          echo "[$(date)] running sync..."
+          /app/sync -config config/config.yaml -batch 100
+          echo "[$(date)] sync done, sleeping ${SYNC_INTERVAL:-60}s"
+          sleep ${SYNC_INTERVAL:-60}
+        done
+    environment:
+      - SYNC_INTERVAL=${SYNC_INTERVAL:-60}
+      - MONGODB_URI=${MONGODB_URI:-mongodb://${MONGO_USERNAME:-admin}:${MONGO_PASSWORD:-admin123}@mongo:27017/?authSource=admin}
+      - MONGODB_DATABASE=${MONGODB_DATABASE:-shorturl_db}
+      - MONGODB_COLLECTION=${MONGODB_COLLECTION:-short_urls}
+      - REDIS_ADDR=${REDIS_ADDR:-redis:6379}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      - REDIS_DB=${REDIS_DB:-3}
+    depends_on:
+      mongo:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - short-url-network
+      # Redis 所在的外部网络
+      - data-net
+
+  mongo:
+    image: ${MONGO_IMAGE:-mongo:7.0}
+    container_name: short-url-mongo
+    init: true
+    ports:
+      - "${MONGODB_PORT:-27017}:27017"
+    environment:
+      # 变量名必须是 MONGO_INITDB_ROOT_* —— 官方镜像的 entrypoint 只认这两个
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USERNAME:-admin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-admin123}
+    volumes:
+      - mongo-data:/data/db
+    restart: unless-stopped
+    stop_grace_period: 30s
+    networks:
+      - short-url-network
+    healthcheck:
+      test:
+        - CMD
+        - mongosh
+        - --quiet
+        - --username
+        - ${MONGO_USERNAME:-admin}
+        - --password
+        - ${MONGO_PASSWORD:-admin123}
+        - --authenticationDatabase
+        - admin
+        - --eval
+        - db.adminCommand('ping')
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      # 首次初始化要创建 root 用户，start_period 给足时间
+      start_period: 40s
+
+  # 独立 Redis —— 只在不依赖外部实例时用:
+  #   docker compose --profile standalone up -d
+  redis:
+    profiles: [standalone]
+    image: ${REDIS_IMAGE:-redis:7-alpine}
+    container_name: short-url-redis
+    ports:
+      - "${REDIS_PORT:-3737}:6379"
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-}
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+    networks:
+      - short-url-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-}", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+networks:
+  short-url-network:
+    driver: bridge
+  # Redis 所在的外部网络，由 Redis 实例的部署环境创建，不在本 compose 生命周期内。
+  # Redis 容器名 redis，在这张网络上可解析。
+  data-net:
+    external: true
+    name: data-net
