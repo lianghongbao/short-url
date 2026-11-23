@@ -55,7 +55,7 @@ jobs:
           set -e
           REGISTRY="${ACR_REGISTRY_HOST}/${ACR_NAMESPACE}"
 
-          IMAGE="${REGISTRY}/${{ steps.meta.outputs.image_tag }}"
+          IMAGE="${REGISTRY}/${IMAGE_NAME}:${{ steps.meta.outputs.image_tag }}"
           LATEST="${REGISTRY}/${IMAGE_NAME}:server-latest"
 
           # 清老 cache metadata
