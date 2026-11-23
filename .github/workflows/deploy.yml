@@ -49,14 +49,14 @@ jobs:
 
       - name: Build & push image
         # 一次 build 打两个 tag:
-        #   ${IMAGE_NAME}-<sha>   immutable,精确版本
-        #   ${IMAGE_NAME}-latest  mutable pointer,deploy job 拉这个
+        #   ${IMAGE_NAME}:server-latest  compose 引用的可变 tag
+        #   ${IMAGE_NAME}-<sha>          immutable,精确版本
         run: |
           set -e
           REGISTRY="${ACR_REGISTRY_HOST}/${ACR_NAMESPACE}"
 
-          IMAGE="${REGISTRY}:${{ steps.meta.outputs.image_tag }}"
-          LATEST="${REGISTRY}:${IMAGE_NAME}-latest"
+          IMAGE="${REGISTRY}/${{ steps.meta.outputs.image_tag }}"
+          LATEST="${REGISTRY}/${IMAGE_NAME}:server-latest"
 
           # 清老 cache metadata
           docker builder prune -af || true
@@ -106,7 +106,7 @@ jobs:
           path: .
 
       - name: Pull image from ACR
-        # 拉 ${IMAGE_NAME}-latest,re-tag 成 ${IMAGE_NAME}:server-latest(本地 tag,供 compose 引用)
+        # 拉 compose 引用的镜像。compose 的 image 由 IMAGE_REGISTRY/IMAGE_NAME 拼出，
         # 凭证从 ${DEPLOY_DIR}/.env 读 REGISTRY_USERNAME / REGISTRY_PASSWORD
         run: |
           set -e
@@ -119,11 +119,9 @@ jobs:
             --username "${REGISTRY_USERNAME}" \
             --password-stdin "${REGISTRY}"
 
-          REMOTE_IMAGE="${REGISTRY}:${IMAGE_NAME}-latest"
-          LOCAL_IMAGE="${IMAGE_NAME}:server-latest"
-          docker pull "${REMOTE_IMAGE}"
-          docker tag "${REMOTE_IMAGE}" "${LOCAL_IMAGE}"
-          echo "✅ Pulled ${REMOTE_IMAGE} → ${LOCAL_IMAGE}"
+          IMAGE="${REGISTRY}/${IMAGE_NAME}:server-latest"
+          docker pull "${IMAGE}"
+          echo "✅ Pulled ${IMAGE}"
 
       - name: Sync & deploy
         working-directory: ${{ github.workspace }}
