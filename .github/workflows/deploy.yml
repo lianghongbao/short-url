@@ -106,7 +106,7 @@ jobs:
           path: .
 
       - name: Pull image from ACR
-        # 拉 compose 引用的镜像。compose 的 image 由 IMAGE_REGISTRY/IMAGE_NAME 拼出，
+        # 拉 compose 引用的镜像。compose 的 image 由 ACR_REGISTRY_HOST/ACR_NAMESPACE/IMAGE_NAME 拼出，
         # 凭证从 ${DEPLOY_DIR}/.env 读 REGISTRY_USERNAME / REGISTRY_PASSWORD
         run: |
           set -e

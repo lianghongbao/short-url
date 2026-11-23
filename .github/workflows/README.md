@@ -27,7 +27,7 @@ push main → build (GitHub-hosted runner)
 |--------|------|--------|
 | `ACR_REGISTRY_HOST` | ACR 公网端点域名 | `<your-acr-region>.personal.cr.aliyuncs.com`(查 ACR 控制台实例详情) |
 | `ACR_NAMESPACE` | ACR namespace/repo 路径 | `<your-namespace>/<your-repo>` |
-| `IMAGE_NAME` | 镜像名（对应 compose 里 `image: ${IMAGE_REGISTRY}/${IMAGE_NAME}:server-latest`）| `short-url-server` |
+| `IMAGE_NAME` | 镜像名（对应 compose 里 `image: ${ACR_REGISTRY_HOST}/${ACR_NAMESPACE}/${IMAGE_NAME}:server-latest`）| `short-url-server` |
 | `APP_CONTAINER` | docker-compose 里 `container_name`，健康检查的目标容器 | `short-url` |
 | `BASE_GOLANG_TAG` | builder 基础镜像 tag | `golang-1.25-alpine` |
 | `BASE_ALPINE_TAG` | runtime 基础镜像 tag | `alpine-3.21` |
@@ -50,7 +50,7 @@ push main → build (GitHub-hosted runner)
 
 | 文件 | 作用 |
 |------|------|
-| `.env` | 应用凭证 + 镜像仓库拉取凭证。**至少包含** `REGISTRY_USERNAME` / `REGISTRY_PASSWORD` / `ACR_REGISTRY_HOST` / `ACR_NAMESPACE` / `IMAGE_REGISTRY` / `IMAGE_NAME` |
+| `.env` | 应用凭证 + 镜像仓库拉取凭证。**至少包含** `REGISTRY_USERNAME` / `REGISTRY_PASSWORD` / `ACR_REGISTRY_HOST` / `ACR_NAMESPACE` / `IMAGE_NAME` |
 | `docker-compose.yml` | 由 deploy job 自动 cp 最新版本（无需手动维护） |
 
 首次部署会从仓库 `.env.example` 自动生成 `.env`，**手动填真实凭证后**才能正常 deploy。
@@ -80,8 +80,8 @@ push main → build (GitHub-hosted runner)
 | `${IMAGE_NAME}-<7位 sha>` | immutable | 精确版本（由 build job 打） |
 | `${IMAGE_NAME}:server-latest` | mutable pointer | deploy job 拉这个，compose 的 `image:` 也指向它 |
 
-compose 的 `image:` 由 `${IMAGE_REGISTRY}/${IMAGE_NAME}:server-latest` 拼出（`IMAGE_REGISTRY`
-为空时退化成裸名，本地构建用）。两个 tag 都在仓库里直接存在，服务器上不需要再 re-tag。
+compose 的 `image:` 由 `${ACR_REGISTRY_HOST}/${ACR_NAMESPACE}/${IMAGE_NAME}:server-latest` 拼出
+（没配 ACR 时退化成裸名，本地构建用）。两个 tag 都在仓库里直接存在，服务器上不需要再 re-tag。
 
 ## ACR 端点说明
 
